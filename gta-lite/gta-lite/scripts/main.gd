@@ -2,19 +2,71 @@ extends Node3D
 
 var player: CharacterBody3D
 var car: CharacterBody3D
+var police_car: CharacterBody3D
 var camera: Camera3D
 
 var driving := false
 var speed := 5.0
 var car_speed := 0.0
+var wanted := 0
+var health := 100
 
 var joystick := Vector2.ZERO
-var camera_touch := Vector2.ZERO
+var npcs: Array[CharacterBody3D] = []
 
-var health := 100
-var wanted := 0
+var speed_label: Label
+var wanted_label: Label
+var health_label: Label
+var mini_map: ColorRect
+var pause_menu: Panel
 
-var buildings = [
+
+func _ready():
+create_world()
+create_player()
+create_car()
+create_police_car()
+create_npcs()
+create_camera()
+create_mobile_hud()
+
+
+# ================= WORLD =================
+
+func create_world():
+var light := DirectionalLight3D.new()
+light.rotation_degrees = Vector3(-55, -35, 0)
+light.light_energy = 1.3
+add_child(light)
+
+var environment := WorldEnvironment.new()
+var env := Environment.new()
+env.background_mode = Environment.BG_COLOR
+env.background_color = Color(0.45, 0.65, 0.9)
+env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+env.ambient_light_energy = 0.8
+environment.environment = env
+add_child(environment)
+
+var ground := StaticBody3D.new()
+add_child(ground)
+
+var mesh := MeshInstance3D.new()
+var box := BoxMesh.new()
+box.size = Vector3(100, 0.2, 100)
+mesh.mesh = box
+ground.add_child(mesh)
+
+var collision := CollisionShape3D.new()
+var shape := BoxShape3D.new()
+shape.size = Vector3(100, 0.2, 100)
+collision.shape = shape
+ground.add_child(collision)
+
+create_road(Vector3(0, 0.02, 0), Vector3(100, 0.04, 10))
+create_road(Vector3(0, 0.03, 0), Vector3(10, 0.05, 100))
+
+var positions = [
 Vector3(-18, 4, -18),
 Vector3(0, 6, -20),
 Vector3(18, 3, -18),
@@ -25,62 +77,13 @@ Vector3(5, 5, 20),
 Vector3(22, 8, 22)
 ]
 
-func _ready():
-create_world()
-create_player()
-create_car()
-create_camera()
-create_mobile_controls()
-
-
-# ---------------- WORLD ----------------
-
-func create_world():
-var light = DirectionalLight3D.new()
-light.rotation_degrees = Vector3(-55, -35, 0)
-light.light_energy = 1.3
-add_child(light)
-
-var environment = WorldEnvironment.new()
-var env = Environment.new()
-env.background_mode = Environment.BG_COLOR
-env.background_color = Color(0.45, 0.65, 0.9)
-env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-env.ambient_light_color = Color(0.7, 0.7, 0.7)
-env.ambient_light_energy = 0.8
-environment.environment = env
-add_child(environment)
-
-# Ground
-var ground = StaticBody3D.new()
-add_child(ground)
-
-var mesh = MeshInstance3D.new()
-var box = BoxMesh.new()
-box.size = Vector3(100, 0.2, 100)
-mesh.mesh = box
-mesh.position.y = -0.1
-ground.add_child(mesh)
-
-var collision = CollisionShape3D.new()
-var shape = BoxShape3D.new()
-shape.size = Vector3(100, 0.2, 100)
-collision.shape = shape
-collision.position.y = -0.1
-ground.add_child(collision)
-
-# Roads
-create_road(Vector3(0, 0.02, 0), Vector3(100, 0.04, 10))
-create_road(Vector3(0, 0.03, 0), Vector3(10, 0.05, 100))
-
-# Buildings
-for position in buildings:
-create_building(position)
+for p in positions:
+create_building(p)
 
 
 func create_road(position: Vector3, size: Vector3):
-var road = MeshInstance3D.new()
-var mesh = BoxMesh.new()
+var road := MeshInstance3D.new()
+var mesh := BoxMesh.new()
 mesh.size = size
 road.mesh = mesh
 road.position = position
@@ -88,70 +91,106 @@ add_child(road)
 
 
 func create_building(position: Vector3):
-var building = StaticBody3D.new()
+var building := StaticBody3D.new()
 building.position = position
 add_child(building)
 
-var mesh = MeshInstance3D.new()
-var box = BoxMesh.new()
+var mesh := MeshInstance3D.new()
+var box := BoxMesh.new()
 box.size = Vector3(8, position.y * 2, 8)
 mesh.mesh = box
 mesh.position.y = position.y
 building.add_child(mesh)
 
-var collision = CollisionShape3D.new()
-var shape = BoxShape3D.new()
+var collision := CollisionShape3D.new()
+var shape := BoxShape3D.new()
 shape.size = Vector3(8, position.y * 2, 8)
 collision.shape = shape
 collision.position.y = position.y
 building.add_child(collision)
 
 
-# ---------------- PLAYER ----------------
+# ================= PLAYER =================
 
 func create_player():
 player = CharacterBody3D.new()
-player.name = "Player"
 player.position = Vector3(0, 1.2, 8)
 add_child(player)
 
-var mesh = MeshInstance3D.new()
-var capsule = CapsuleMesh.new()
+var mesh := MeshInstance3D.new()
+var capsule := CapsuleMesh.new()
 capsule.height = 2
 capsule.radius = 0.45
 mesh.mesh = capsule
 player.add_child(mesh)
 
-var collision = CollisionShape3D.new()
-var shape = CapsuleShape3D.new()
+var collision := CollisionShape3D.new()
+var shape := CapsuleShape3D.new()
 shape.height = 2
 shape.radius = 0.45
 collision.shape = shape
 player.add_child(collision)
 
 
-# ---------------- CAR ----------------
+# ================= CARS =================
 
 func create_car():
-car = CharacterBody3D.new()
-car.name = "Car"
-car.position = Vector3(0, 0.8, 3)
-add_child(car)
+car = create_vehicle(Vector3(0, 0.8, 3))
+car.name = "PlayerCar"
 
-var body = MeshInstance3D.new()
-var box = BoxMesh.new()
+
+func create_police_car():
+police_car = create_vehicle(Vector3(14, 0.8, 14))
+police_car.name = "PoliceCar"
+
+
+func create_vehicle(position: Vector3) -> CharacterBody3D:
+var vehicle := CharacterBody3D.new()
+vehicle.position = position
+add_child(vehicle)
+
+var body := MeshInstance3D.new()
+var box := BoxMesh.new()
 box.size = Vector3(2.2, 0.8, 4.2)
 body.mesh = box
-car.add_child(body)
+vehicle.add_child(body)
 
-var collision = CollisionShape3D.new()
-var shape = BoxShape3D.new()
+var collision := CollisionShape3D.new()
+var shape := BoxShape3D.new()
 shape.size = Vector3(2.2, 0.8, 4.2)
 collision.shape = shape
-car.add_child(collision)
+vehicle.add_child(collision)
+
+return vehicle
 
 
-# ---------------- CAMERA ----------------
+# ================= NPC =================
+
+func create_npcs():
+var positions = [
+Vector3(-8, 1, -8),
+Vector3(8, 1, -12),
+Vector3(-12, 1, 12),
+Vector3(12, 1, 8),
+Vector3(5, 1, -5)
+]
+
+for p in positions:
+var npc := CharacterBody3D.new()
+npc.position = p
+add_child(npc)
+
+var mesh := MeshInstance3D.new()
+var capsule := CapsuleMesh.new()
+capsule.height = 1.8
+capsule.radius = 0.4
+mesh.mesh = capsule
+npc.add_child(mesh)
+
+npcs.append(npc)
+
+
+# ================= CAMERA =================
 
 func create_camera():
 camera = Camera3D.new()
@@ -161,7 +200,7 @@ update_camera()
 
 
 func update_camera():
-var target = player
+var target := player
 
 if driving:
 target = car
@@ -170,67 +209,75 @@ camera.position = target.position + Vector3(0, 6, 9)
 camera.look_at(target.position + Vector3(0, 1, 0))
 
 
-# ---------------- MOBILE CONTROLS ----------------
+# ================= HUD =================
 
-func create_mobile_controls():
-var layer = CanvasLayer.new()
+func create_mobile_hud():
+var layer := CanvasLayer.new()
 layer.name = "MobileHUD"
 add_child(layer)
 
-# Left analog
-var stick = Button.new()
-stick.name = "LeftAnalog"
-stick.text = "●"
-stick.position = Vector2(55, 480)
-stick.size = Vector2(150, 150)
-stick.add_theme_font_size_override("font_size", 48)
-layer.add_child(stick)
+health_label = Label.new()
+health_label.text = "♥ 100"
+health_label.position = Vector2(30, 25)
+health_label.add_theme_font_size_override("font_size", 26)
+layer.add_child(health_label)
 
-stick.button_down.connect(func():
+wanted_label = Label.new()
+wanted_label.text = "★ 0"
+wanted_label.position = Vector2(1080, 25)
+wanted_label.add_theme_font_size_override("font_size", 26)
+layer.add_child(wanted_label)
+
+speed_label = Label.new()
+speed_label.text = "0 KM/H"
+speed_label.position = Vector2(1080, 650)
+speed_label.add_theme_font_size_override("font_size", 22)
+layer.add_child(speed_label)
+
+# Analog
+var analog := Button.new()
+analog.text = "●"
+analog.position = Vector2(45, 480)
+analog.size = Vector2(150, 150)
+analog.add_theme_font_size_override("font_size", 42)
+layer.add_child(analog)
+
+analog.button_down.connect(func():
 joystick = Vector2(0, -1)
 )
 
-stick.button_up.connect(func():
+analog.button_up.connect(func():
 joystick = Vector2.ZERO
 )
 
-# Right face buttons
-var triangle = make_control("△", Vector2(1080, 390), layer)
-var circle = make_control("○", Vector2(1160, 465), layer)
-var cross = make_control("×", Vector2(1080, 540), layer)
-var square = make_control("□", Vector2(1000, 465), layer)
+# Face buttons
+var triangle := make_button("△", Vector2(1080, 385), layer)
+var circle := make_button("○", Vector2(1160, 460), layer)
+var cross := make_button("×", Vector2(1080, 535), layer)
+var square := make_button("□", Vector2(1000, 460), layer)
 
 triangle.pressed.connect(enter_exit_car)
-circle.pressed.connect(action_button)
-cross.pressed.connect(jump_button)
-square.pressed.connect(attack_button)
+circle.pressed.connect(interact)
+cross.pressed.connect(jump)
+square.pressed.connect(action)
 
-# Shoulder buttons
-var l1 = make_control("L1", Vector2(60, 390), layer)
-var r1 = make_control("R1", Vector2(1160, 300), layer)
+# Shoulder
+var l1 := make_button("L1", Vector2(50, 390), layer)
+var r1 := make_button("R1", Vector2(1160, 300), layer)
 
 l1.pressed.connect(camera_left)
 r1.pressed.connect(camera_right)
 
-# HUD
-var health_label = Label.new()
-health_label.name = "Health"
-health_label.text = "♥ 100"
-health_label.position = Vector2(35, 35)
-health_label.add_theme_font_size_override("font_size", 26)
-layer.add_child(health_label)
+# Pause
+var pause := make_button("Ⅱ", Vector2(620, 25), layer)
+pause.pressed.connect(toggle_pause)
 
-var wanted_label = Label.new()
-wanted_label.name = "Wanted"
-wanted_label.text = "★"
-wanted_label.position = Vector2(1120, 35)
-wanted_label.add_theme_font_size_override("font_size", 30)
-layer.add_child(wanted_label)
+create_minimap(layer)
 
 
-func make_control(label_text: String, pos: Vector2, layer: CanvasLayer) -> Button:
-var button = Button.new()
-button.text = label_text
+func make_button(text_value: String, pos: Vector2, layer: CanvasLayer) -> Button:
+var button := Button.new()
+button.text = text_value
 button.position = pos
 button.size = Vector2(70, 70)
 button.add_theme_font_size_override("font_size", 26)
@@ -238,7 +285,23 @@ layer.add_child(button)
 return button
 
 
-# ---------------- ACTIONS ----------------
+# ================= MINI MAP =================
+
+func create_minimap(layer: CanvasLayer):
+mini_map = ColorRect.new()
+mini_map.position = Vector2(30, 30)
+mini_map.size = Vector2(180, 120)
+mini_map.color = Color(0.05, 0.05, 0.05, 0.75)
+layer.add_child(mini_map)
+
+var title := Label.new()
+title.text = "CITY MAP"
+title.position = Vector2(45, 35)
+title.add_theme_font_size_override("font_size", 14)
+layer.add_child(title)
+
+
+# ================= ACTIONS =================
 
 func enter_exit_car():
 if not driving:
@@ -251,18 +314,17 @@ player.visible = true
 player.position = car.position + Vector3(2, 0, 0)
 
 
-func action_button():
-print("Action")
+func interact():
+print("NPC / world interaction")
 
 
-func jump_button():
+func action():
+print("Action button")
+
+
+func jump():
 if not driving and player.is_on_floor():
 player.velocity.y = 7
-
-
-func attack_button():
-wanted = min(wanted + 1, 5)
-print("Wanted level: ", wanted)
 
 
 func camera_left():
@@ -273,15 +335,55 @@ func camera_right():
 camera.rotation.y -= 0.2
 
 
-# ---------------- GAME LOOP ----------------
+func toggle_pause():
+if pause_menu:
+pause_menu.queue_free()
+pause_menu = null
+get_tree().paused = false
+return
+
+pause_menu = Panel.new()
+pause_menu.position = Vector2(420, 180)
+pause_menu.size = Vector2(440, 300)
+add_child(pause_menu)
+
+var title := Label.new()
+title.text = "STREET LITE"
+title.position = Vector2(120, 30)
+title.add_theme_font_size_override("font_size", 30)
+pause_menu.add_child(title)
+
+var resume := Button.new()
+resume.text = "DAVAM ET"
+resume.position = Vector2(120, 100)
+resume.size = Vector2(200, 60)
+pause_menu.add_child(resume)
+
+resume.pressed.connect(toggle_pause)
+
+get_tree().paused = true
+pause_menu.process_mode = Node.PROCESS_MODE_ALWAYS
+
+
+# ================= GAME LOOP =================
 
 func _physics_process(delta):
+if get_tree().paused:
+return
+
 if driving:
 update_car(delta)
 else:
 update_player(delta)
 
+update_npcs(delta)
 update_camera()
+
+if speed_label:
+if driving:
+speed_label.text = str(round(abs(car_speed) * 8.0)) + " KM/H"
+else:
+speed_label.text = "0 KM/H"
 
 
 func update_player(delta):
@@ -319,3 +421,8 @@ car_speed = lerp(car_speed, 0.0, delta * 5.0)
 car.velocity.x = direction.x * car_speed
 car.velocity.z = direction.z * car_speed
 car.move_and_slide()
+
+
+func update_npcs(delta):
+for npc in npcs:
+npc.position.x += sin(Time.get_ticks_msec() * 0.001 + npc.position.z) * delta * 0.5
